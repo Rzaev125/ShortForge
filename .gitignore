@@ -1,0 +1,54 @@
+# Build output
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/coverage/
+**/TestResults/
+**/playwright-report/
+**/test-results/
+/.vs/
+/.idea/
+/artifacts/
+/publish/
+
+# Local configuration / secrets
+.env
+.env.*
+!.env.example
+*.user
+*.suo
+appsettings.Local.json
+
+# User content, models, tools and runtime data
+/data/
+/cache/
+/models/
+/tools/bin/
+/exports/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3*
+*.exe
+*.msi
+*.pfx
+*.key
+*.ggml
+*.avi
+*.m4v
+*.m4a
+*.mts
+*.log
+*.gguf
+*.onnx
+*.mp4
+*.mkv
+*.mov
+*.webm
+*.wav
+
+# OS files
+Thumbs.db
+.DS_Store

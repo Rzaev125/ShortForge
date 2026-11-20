@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-__NONCE__'; style-src 'unsafe-inline'; media-src 'self' file:; base-uri 'none'; form-action 'none'">
+<title>ShortForge · Начало слова</title>
+<style>
+:root { font: 16px/1.5 "Segoe UI", sans-serif; color: #182729; background: #f7f8f4; accent-color: #146657 }
+* { box-sizing: border-box }
+body { max-width: 54rem; margin: 1.4rem auto 3rem; padding: 0 1rem }
+h1 { margin: 0; font-size: 1.85rem } h2 { font-size: 1.2rem; margin: .4rem 0 }
+p { margin: .45rem 0 } section { margin: 1rem 0; border-top: 1px solid #c6ceca; padding-top: .75rem }
+label { font-weight: 600 }
+button, select, input { font: inherit; max-width: 100% }
+button, select { border: 1px solid #909e98; border-radius: .3rem; padding: .28rem .6rem; background: white; color: inherit }
+button { cursor: pointer } button:disabled { cursor: default; opacity: .5 }
+button.primary { background: #155f50; border-color: #155f50; color: white }
+button:focus-visible, select:focus-visible, input:focus-visible, canvas:focus-visible { outline: 3px solid #237eaa; outline-offset: 2px }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; margin: .45rem 0 }
+#word { color: #155f50; font-size: 2rem; line-height: 1.15 }
+#context { font-size: 1.1rem } audio { width: 100%; margin-top: .55rem }
+canvas { display: block; background: #102c31; width: 100%; height: 6.4rem; touch-action: manipulation; cursor: crosshair; border-radius: .25rem }
+.scale { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; font-size: .85rem }
+#decision, #progress { font-weight: 600 } #storage { color: #3e5450 }
+</style>
+<main>
+<h1>Начало слова</h1>
+<p>Прослушайте фрагмент и найдите первый слышимый звук указанного слова. Проверьте себя, проиграв звук вокруг курсора. Если слово трудно различить, его можно пропустить.</p>
+<div id="batch" hidden>__BATCH__</div>
+<section>
+<div class="row"><label for="target">Слово</label><select id="target"></select>
+<button id="prev">Предыдущее</button><button id="next">Следующее</button></div>
+<h2 id="word" lang="en"></h2>
+<p id="context" lang="en"></p>
+<audio id="audio" controls preload="auto" aria-label="Звук фрагмента"></audio>
+<p id="media-error" role="alert"></p>
+<div class="row"><label for="zoom">Масштаб волны</label><select id="zoom"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select>
+<span>Время от начала фрагмента</span></div>
+<canvas id="wave" tabindex="0" aria-label="Звуковая волна. Щелчок устанавливает курсор. Стрелки сдвигают его на десять миллисекунд."></canvas>
+<div class="scale"><span id="left"></span><span id="right"></span></div>
+<div class="row">
+<button id="from-head">Курсор в позицию плеера</button>
+<button id="minus" aria-label="Сдвинуть курсор назад на 10 мс">−10 мс</button>
+<button id="plus" aria-label="Сдвинуть курсор вперёд на 10 мс">+10 мс</button>
+<button id="play-around">Послушать вокруг курсора</button>
+<button id="play-from">Послушать с курсора</button>
+</div>
+<p id="position"></p>
+<div class="row"><button id="mark" class="primary">Сохранить отметку</button>
+<button id="skip">Пропустить слово</button><button id="clear">Снять решение</button></div>
+<p id="decision" aria-live="polite"></p>
+</section>
+<section>
+<h2>Разметка записи</h2><p id="progress" aria-live="polite"></p>
+<div class="row"><button id="save">Скачать JSON</button><label for="import">Загрузить разметку</label>
+<input type="file" id="import" accept=".json,application/json"></div>
+<p id="storage" role="status"></p>
+</section>
+</main>
+<script nonce="__NONCE__">
+'use strict'
+const el = id => document.getElementById(id)
+const {batchId, targets} = JSON.parse(el('batch').textContent)
+const audio = el('audio'), wave = el('wave'), selector = el('target')
+const storageKey = 'shortforge.p06.word-review.' + batchId
+let rows = targets.map(({cue}) => ({cue, status: 'pending', onsetMs: null}))
+let index = 0, cursor = null, peaks, windowStart = 0, windowEnd = 0, stopAt = null, frame = 0
+const item = () => targets[index]
+const duration = () => item().endMs - item().startMs
+const seconds = ms => (ms / 1000).toFixed(3).replace('.', ',') + ' с'
+const names = {pending: 'Без решения', marked: 'Отмечено', skipped: 'Пропущено'}
+const currentReport = () => ({version: 1, batchId, rows})
+function validated(data) {
+  if (data?.version !== 1 || data.batchId !== batchId || !Array.isArray(data.rows) || data.rows.length !== targets.length)
+    throw new Error('Файл относится к другой записи или имеет неверный формат.')
+  const byCue = new Map(data.rows.map(row => [row?.cue, row]))
+  return targets.map(({cue, startMs, endMs}) => {
+    const row = byCue.get(cue)
+    if (!row || !Object.hasOwn(names, row.status) ||
+        (row.status === 'marked' ? !Number.isSafeInteger(row.onsetMs) || row.onsetMs < startMs || row.onsetMs >= endMs : row.onsetMs !== null))
+      throw new Error('Некорректная строка для слова №' + cue + '.')
+    return {cue, status: row.status, onsetMs: row.onsetMs}
+  })
+}
+function saveDraft() {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(currentReport()))
+    el('storage').textContent = 'Черновик сохранён в этом браузере.'
+  } catch {
+    el('storage').textContent = 'Браузер не сохранил черновик. Скачайте JSON для продолжения.'
+  }
+}
+function updateReview() {
+  rows.forEach((row, i) => {
+    selector.options[i].textContent = (i + 1) + ' · ' + targets[i].word + ' · ' + names[row.status]
+  })
+  const row = rows[index]
+  el('decision').textContent = row.status === 'marked' ? 'Сохранённое начало: ' + seconds(row.onsetMs - item().startMs) : names[row.status]
+  el('clear').disabled = row.status === 'pending' && cursor === null
+  el('skip').disabled = row.status === 'skipped'
+  const count = status => rows.filter(r => r.status === status).length
+  el('progress').textContent = 'Отмечено ' + count('marked') + ' из ' + rows.length + ' · пропущено ' + count('skipped') + ' · без решения ' + count('pending')
+}
+function setWindow(center) {
+  const span = duration() / Number(el('zoom').value)
+  windowStart = Math.round(Math.min(duration() - span, Math.max(0, center - span / 2)))
+  windowEnd = Math.min(duration(), windowStart + span)
+  el('left').textContent = seconds(windowStart)
+  el('right').textContent = seconds(windowEnd)
+}
+function draw() {
+  const box = wave.getBoundingClientRect(), scale = window.devicePixelRatio || 1
+  const width = Math.max(1, Math.round(box.width * scale)), height = Math.max(1, Math.round(box.height * scale))
+  if (wave.width !== width || wave.height !== height) { wave.width = width; wave.height = height }
+  const ctx = wave.getContext('2d')
+  ctx.clearRect(0, 0, width, height)
+  ctx.fillStyle = '#8ad1bc'
+  const msPerPixel = (windowEnd - windowStart) / width
+  for (let x = 0; x < width; x++) {
+    const left = Math.floor((windowStart + x * msPerPixel) / 2)
+    const right = Math.min(peaks.length, Math.ceil((windowStart + (x + 1) * msPerPixel) / 2))
+    let peak = 0
+    for (let bin = left; bin < right; bin++) peak = Math.max(peak, peaks[bin])
+    const amplitude = Math.max(1, peak / 255 * height)
+    ctx.fillRect(x, (height - amplitude) / 2, 1, amplitude)
+  }
+  function line(ms, color, thickness) {
+    if (ms < windowStart || ms > windowEnd) return
+    const x = Math.min(width - thickness, Math.round((ms - windowStart) / msPerPixel))
+    ctx.fillStyle = color
+    ctx.fillRect(x, 0, thickness, height)
+  }
+  if (!audio.paused) line(audio.currentTime * 1000, 'white', scale)
+  if (cursor !== null) line(cursor, '#ffbf65', scale * 2)
+}
+function updateCursor() {
+  el('position').textContent = cursor === null ? 'Щёлкните по волне или перенесите курсор из плеера.' : 'Курсор: ' + seconds(cursor)
+  for (const id of ['mark', 'play-around', 'play-from']) el(id).disabled = cursor === null
+  el('clear').disabled = rows[index].status === 'pending' && cursor === null
+  draw()
+}
+function setCursor(ms) {
+  stopAt = null
+  audio.pause()
+  cursor = Math.min(duration() - 1, Math.max(0, Math.round(ms)))
+  audio.currentTime = cursor / 1000
+  if (cursor < windowStart || cursor >= windowEnd) setWindow(cursor)
+  updateCursor()
+}
+function select(i) {
+  audio.pause()
+  stopAt = null
+  index = i
+  selector.value = String(item().cue)
+  el('prev').disabled = i === 0
+  el('next').disabled = i === targets.length - 1
+  el('word').textContent = item().word
+  el('context').textContent = item().context
+  el('media-error').textContent = ''
+  audio.src = item().cue + '.wav'
+  peaks = Uint8Array.from(atob(item().peaks), c => c.charCodeAt(0))
+  cursor = rows[index].status === 'marked' ? rows[index].onsetMs - item().startMs : null
+  el('zoom').value = '1'
+  setWindow(0)
+  updateCursor()
+  updateReview()
+}
+function decide(status) {
+  if (status === 'marked' && cursor === null) return
+  rows[index] = {cue: item().cue, status, onsetMs: status === 'marked' ? item().startMs + cursor : null}
+  if (status !== 'marked') cursor = null
+  updateCursor()
+  updateReview()
+  saveDraft()
+}
+function monitor() {
+  frame = 0
+  if (audio.paused) return
+  if (stopAt !== null && audio.currentTime >= stopAt) { audio.pause(); stopAt = null }
+  draw()
+  if (!audio.paused) frame = requestAnimationFrame(monitor)
+}
+async function listen(before) {
+  if (cursor === null) return
+  const started = index
+  audio.currentTime = Math.max(0, cursor - before) / 1000
+  stopAt = Math.min(duration(), cursor + 750) / 1000
+  try { await audio.play() }
+  catch (e) { if (started === index && e.name !== 'AbortError') el('media-error').textContent = 'Не удалось проиграть фрагмент.' }
+}
+targets.forEach(target => selector.add(new Option(target.word, String(target.cue))))
+selector.onchange = () => select(selector.selectedIndex)
+el('prev').onclick = () => select(index - 1)
+el('next').onclick = () => select(index + 1)
+el('zoom').onchange = () => {
+  setWindow(cursor ?? audio.currentTime * 1000)
+  draw()
+}
+wave.onclick = event => {
+  const box = wave.getBoundingClientRect()
+  setCursor(windowStart + (event.clientX - box.left) / box.width * (windowEnd - windowStart))
+}
+function nudge(delta) { setCursor((cursor ?? audio.currentTime * 1000) + delta) }
+wave.onkeydown = event => {
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    event.preventDefault()
+    nudge(event.key === 'ArrowLeft' ? -10 : 10)
+  }
+}
+el('minus').onclick = () => nudge(-10)
+el('plus').onclick = () => nudge(10)
+el('from-head').onclick = () => setCursor(audio.currentTime * 1000)
+el('play-around').onclick = () => listen(450)
+el('play-from').onclick = () => listen(0)
+audio.onplay = () => { if (!frame) frame = requestAnimationFrame(monitor) }
+audio.onpause = () => { if (audio.paused) { stopAt = null; draw() } }
+audio.onerror = () => { el('media-error').textContent = 'Не удалось открыть WAV. Сохраните страницу и звуковые фрагменты в одной папке.' }
+el('mark').onclick = () => decide('marked')
+el('skip').onclick = () => decide('skipped')
+el('clear').onclick = () => decide('pending')
+el('save').onclick = () => {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(currentReport(), null, 2)], {type: 'application/json'}))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'shortforge-word-review-' + batchId.slice(0, 12) + '.json'
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+el('import').onchange = async event => {
+  const file = event.target.files[0]
+  if (!file) return
+  try {
+    if (file.size > 1024 * 1024) throw new Error('Файл превышает 1 МБ.')
+    const loaded = validated(JSON.parse(await file.text()))
+    rows = loaded
+    select(index)
+    saveDraft()
+  } catch (e) { el('storage').textContent = 'Не удалось загрузить разметку. ' + e.message }
+  finally { event.target.value = '' }
+}
+try {
+  const draft = localStorage.getItem(storageKey)
+  if (draft) { rows = validated(JSON.parse(draft)); el('storage').textContent = 'Черновик восстановлен.' }
+} catch { el('storage').textContent = 'Черновик недоступен. Можно загрузить сохранённый JSON.' }
+select(0)
+new ResizeObserver(draw).observe(wave)
+</script>
+</html>

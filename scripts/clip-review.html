@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-__NONCE__'; media-src 'self' file:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>ShortForge · Приёмка подбора</title>
+<style>
+:root { color-scheme:light dark; font:16px/1.5 "Segoe UI",sans-serif }
+body { max-width:60rem; margin:2rem auto; padding:0 1rem 5rem }
+h1,h2,h3,p { margin:.55rem 0 } h2 { font-size:1.25rem } h3 {font-size:1rem}
+section { border-top:1px solid GrayText; padding:1rem 0 }
+audio { vertical-align:middle; max-width:100%; margin-right:1rem }
+label { display:inline-flex; flex-direction:column; margin:.35rem .8rem .35rem 0 }
+select,textarea,button { font:inherit; padding:.3rem }
+textarea { width:min(38rem,80vw) }
+button { cursor:pointer; margin:.4rem .6rem .4rem 0 }
+:focus-visible { outline:3px solid Highlight; outline-offset:2px }
+.result { font-weight:600 }
+</style>
+</head>
+<body>
+<h1>Приёмка подбора</h1>
+<p>Прослушайте первое и последнее слово. Между двумя отрывками — полсекунды тишины. Короткие клипы звучат целиком. Для оценки содержания откройте весь фрагмент.</p>
+<div hidden id="batch">__BATCH__</div>
+<div id="cards"></div>
+<section aria-labelledby="total"><h2 id="total">Результат</h2>
+<p id="progress" aria-live="polite"></p><div id="scores"></div><p id="verdict" class="result"></p>
+<button id="save" type="button" disabled>Сохранить итог в JSON</button><p id="storage" role="status"></p>
+</section>
+<script nonce="__NONCE__">
+'use strict';
+const batch = JSON.parse(document.getElementById('batch').textContent);
+const modes = {structure:'По структуре речи', semantic:'Qwen'};
+const criteria = {independence:'Самостоятельность', completion:'Завершённость мысли', titleMatch:'Соответствие заголовка'};
+const storageKey = 'shortforge.clip-review.v1.' + batch.batchId;
+const savedInputs = new Map();
+const grades = new Map();
+const notes = new Map();
+const cards = document.getElementById('cards');
+const byRow = new Map(batch.editorial.map(row => [row.number + '/' + row.mode, row]));
+function element(tag, text) {
+  const el = document.createElement(tag);
+  if (text !== undefined) el.textContent = text;
+  return el;
+}
+function grade(parent, key, labelText, initial) {
+  const label = element('label', labelText);
+  const control = element('select');
+  for (const [value, text] of [['','Ожидает оценки'],['1','1 · Да'],['0','0 · Нет']]) {
+    const option = element('option',text);
+    option.value=value;
+    control.append(option);
+  }
+  control.value = initial == null ? '' : String(initial);
+  label.append(control);
+  parent.append(label);
+  savedInputs.set(key,control);
+  grades.set(key,control);
+}
+function note(parent, key, initial) {
+  const label = element('label','Полезность или интересность');
+  const input = element('textarea');
+  input.rows=2;
+  input.maxLength=2000;
+  input.value=initial || '';
+  label.append(input);
+  parent.append(label);
+  savedInputs.set(key,input);
+  notes.set(key,input);
+}
+function time(us) {
+  return (us / 1000000).toLocaleString('ru-RU',{minimumFractionDigits:3,maximumFractionDigits:3});
+}
+for (const clip of batch.intervals) {
+  const section=element('section');
+  const heading=element('h2','№' + clip.number + ' · ' + batch.films[clip.film].name);
+  heading.id='clip-' + clip.number;
+  section.setAttribute('aria-labelledby',heading.id);
+  section.append(heading,element('p',time(clip.startUs) + ' – ' + time(clip.endUs) + ' с'));
+  const audio=element('audio');
+  audio.controls=true;
+  audio.preload='none';
+  audio.src=clip.number + '.wav';
+  audio.setAttribute('aria-label','Границы записи №'+clip.number);
+  const link=element('a','Весь фрагмент');
+  link.href=clip.number + '.mp4';
+  link.target='_blank';
+  link.rel='noopener';
+  section.append(audio, link);
+  const hearing=element('div');
+  grade(hearing,clip.number + '/words','Оба граничных слова целы на слух',null);
+  section.append(hearing);
+  for (const row of clip.rows) {
+    const key=clip.number + '/' + row.mode;
+    const initial=byRow.get(key);
+    const details=element('details');
+    details.open=!initial;
+    details.append(element('summary',modes[row.mode] + ' · ' + row.title));
+    for (const [field,label] of Object.entries(criteria)) grade(details,key+'/'+field,label,initial?.[field]);
+    details.append(element('br'));
+    note(details,key+'/note',initial?.note);
+    section.append(details);
+  }
+  cards.append(section);
+}
+function readGrade(key) {
+  const value = grades.get(key).value;
+  return value === '' ? null : Number(value);
+}
+function report() {
+  const rows=[];
+  const summary={};
+  for (const clip of batch.intervals) {
+    for (const row of clip.rows) {
+      const key=clip.number + '/' + row.mode;
+      const marks={words:readGrade(clip.number+'/words')};
+      for (const field of Object.keys(criteria)) marks[field]=readGrade(key+'/'+field);
+      const usefulness=notes.get(key+'/note').value.trim();
+      const assessed=Object.values(marks).every(v=>v!==null) && usefulness.length>0;
+      rows.push({number:clip.number,film:batch.films[clip.film].name,sourceSha256:batch.films[clip.film].sha256,
+        audioTrack:batch.films[clip.film].audioTrack, mode:row.mode,title:row.title,startUs:clip.startUs,endUs:clip.endUs,marks,usefulness,
+        passed:assessed ? Object.values(marks).every(v=>v===1) : null});
+    }
+  }
+  for (const mode of Object.keys(modes)) {
+    const subset=rows.filter(row=>row.mode===mode);
+    const reviewed=subset.filter(row=>row.passed!==null).length;
+    const passed=subset.filter(row=>row.passed===true).length;
+    summary[mode]={total:subset.length,reviewed,passed,percent:subset.length>0 && reviewed===subset.length ? 100*passed/subset.length : null};
+  }
+  const complete=rows.length>0 && rows.every(row=>row.passed!==null);
+  let thresholdMet=null;
+  if (complete && batch.films.length>=3 && summary.semantic.total>0)
+    thresholdMet=100*summary.semantic.passed>=70*summary.semantic.total;
+  return {version:1,batchId:batch.batchId,films:batch.films,complete,thresholdMet,summary,rows};
+}
+function update() {
+  const result=report();
+  const heard=batch.intervals.filter(c=>readGrade(c.number+'/words')!==null).length;
+  document.getElementById('progress').textContent='Записей со слуховой оценкой: '+heard+' из '+batch.intervals.length;
+  const scores=document.getElementById('scores');
+  scores.replaceChildren();
+  for (const [mode,s] of Object.entries(result.summary)) {
+    const text=s.percent===null ? 'оценено '+s.reviewed+' из '+s.total :
+      'прошли '+s.passed+' из '+s.total+' ('+s.percent.toLocaleString('ru-RU',{maximumFractionDigits:1})+'%)';
+    scores.append(element('p',modes[mode]+' — '+text));
+  }
+  document.getElementById('verdict').textContent=!result.complete ? 'Для итога нужны оценки и заметки по всем предложениям.' :
+    result.thresholdMet===null ? 'Для проверки порога нужны три разных фильма и предложения смыслового режима.' :
+      result.thresholdMet ? 'Порог 70% для смыслового режима достигнут.' : 'Результат смыслового режима ниже порога 70%.';
+  document.getElementById('save').disabled=!result.complete;
+}
+function storeDraft() {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(Object.fromEntries([...savedInputs].map(([k,input])=>[k,input.value]))));
+    document.getElementById('storage').textContent='Черновик сохранён в этом браузере.';
+  } catch {
+    document.getElementById('storage').textContent='Браузер не сохранил черновик. Оставьте страницу открытой до сохранения итога.';
+  }
+}
+try {
+  const draft=JSON.parse(localStorage.getItem(storageKey));
+  if (draft && typeof draft==='object' && !Array.isArray(draft)) {
+    for (const [key,input] of savedInputs) {
+      const value=draft[key];
+      if (grades.has(key) ? ['','0','1'].includes(value) : typeof value==='string' && value.length<=2000) input.value=value;
+    }
+  }
+} catch { /* The form also works when browser storage is unavailable. */ }
+cards.addEventListener('input',()=>{update();storeDraft()});
+document.getElementById('save').addEventListener('click',()=>{
+  const result=report();
+  if (!result.complete) return;
+  const blob=new Blob([JSON.stringify(result,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const link=element('a');
+  link.href=url;
+  link.download='shortforge-p04-'+batch.batchId.slice(0,12)+'.json';
+  link.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+update();
+</script>
+</body>
+</html>

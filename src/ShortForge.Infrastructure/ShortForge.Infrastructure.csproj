@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <FaceDetectorDir>$(MSBuildProjectDirectory)/obj/$(Configuration)/face</FaceDetectorDir>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <Content Include="$(FaceDetectorDir)/ShortForge.FaceDetector.exe" Link="ShortForge.FaceDetector.exe"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../ShortForge.FaceDetector/C++WinRT-LICENSE.txt" Link="licenses/C++WinRT-LICENSE.txt"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildFaceDetector" BeforeTargets="PrepareForBuild" Condition="'$(OS)' == 'Windows_NT'"
+          Inputs="../ShortForge.FaceDetector/main.cpp;../../scripts/Build-FaceDetector.ps1"
+          Outputs="$(FaceDetectorDir)/ShortForge.FaceDetector.exe">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)/../../scripts/Build-FaceDetector.ps1&quot; -OutputDirectory &quot;$(FaceDetectorDir)&quot;" />
+  </Target>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ShortForge.Infrastructure.Tests" />
+    <ProjectReference Include="../ShortForge.Core/ShortForge.Core.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+</Project>

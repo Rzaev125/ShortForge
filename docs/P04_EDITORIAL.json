@@ -1,0 +1,77 @@
+{
+  "batchId": "3363c16bf3629ed376c99646988710e7f8d3fbb67b9200ca659f932ddb0b0115",
+  "rows": [
+    {
+      "number": 1,
+      "mode": "structure",
+      "independence": 1,
+      "completion": 1,
+      "titleMatch": 1,
+      "note": "Введение и пример рельефа кратера."
+    },
+    {
+      "number": 2,
+      "mode": "semantic",
+      "independence": 1,
+      "completion": 1,
+      "titleMatch": 1,
+      "note": "Начало называет бассейн. Измерения объясняют, почему крупные ударные образования трудно различить."
+    },
+    {
+      "number": 3,
+      "mode": "structure",
+      "independence": 1,
+      "completion": 1,
+      "titleMatch": 1,
+      "note": "Первая остановка лунной экскурсии."
+    },
+    {
+      "number": 3,
+      "mode": "semantic",
+      "independence": 1,
+      "completion": 1,
+      "titleMatch": 1,
+      "note": "Тот же эпизод, с акцентом на измерение лунной коры."
+    },
+    {
+      "number": 4,
+      "mode": "structure",
+      "independence": 0,
+      "completion": 0,
+      "titleMatch": 1,
+      "note": "Начало ссылается на предыдущую остановку, конец вводит новую."
+    },
+    {
+      "number": 5,
+      "mode": "structure",
+      "independence": 1,
+      "completion": 0,
+      "titleMatch": 1,
+      "note": "Заканчивается ожиданием гладкой поверхности."
+    },
+    {
+      "number": 6,
+      "mode": "structure",
+      "independence": 0,
+      "completion": 1,
+      "titleMatch": 1,
+      "note": "Открывающее противопоставление опирается на отрезанную предпосылку."
+    },
+    {
+      "number": 7,
+      "mode": "semantic",
+      "independence": 1,
+      "completion": 1,
+      "titleMatch": 1,
+      "note": "Представляет миссию, цель полёта и размер астероида. Клип заканчивается до перехода к ожиданиям о поверхности."
+    },
+    {
+      "number": 8,
+      "mode": "semantic",
+      "independence": 0,
+      "completion": 1,
+      "titleMatch": 1,
+      "note": "Снимки, валун и происхождение его имени образуют эпизод. В начальной фразе «камеры миссии» сама миссия не названа."
+    }
+  ]
+}

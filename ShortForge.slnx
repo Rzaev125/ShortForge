@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ShortForge.Core/ShortForge.Core.csproj" />
+    <Project Path="src/ShortForge.Infrastructure/ShortForge.Infrastructure.csproj" />
+    <Project Path="src/ShortForge.Desktop/ShortForge.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ShortForge.Core.Tests/ShortForge.Core.Tests.csproj" />
+    <Project Path="tests/ShortForge.Infrastructure.Tests/ShortForge.Infrastructure.Tests.csproj" />
+    <Project Path="tests/ShortForge.WindowsSmoke/ShortForge.WindowsSmoke.csproj" />
+  </Folder>
+</Solution>
